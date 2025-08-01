@@ -10,8 +10,7 @@ def get_message():
     """获取用户消息"""
     try:
         data = request.get_json()
-        
-        # 检查数据是否为空
+
         if not data:
             return flask.jsonify({
                 'status': 400,
@@ -20,17 +19,13 @@ def get_message():
         
         msg = data.get('msg')
         uuid = data.get('uuid')
-        
-        # 检查必需字段
+
         if not msg or not uuid:
             return flask.jsonify({
                 'status': 400,
                 'message': 'msg和uuid字段都是必需的'
             }), 400
-        
-        # 处理消息逻辑
-        # 这里可以添加实际的业务逻辑
-        
+
         return flask.jsonify({
             'status': 200,
             'message': '获取用户消息成功',
