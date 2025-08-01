@@ -1,0 +1,6 @@
+{
+    "apiKey": "YOUR_API_KEY",
+    "chatModel": "gpt-3.5-turbo",
+    "embeddingModel": "text-embedding-ada-002",
+    "database": "memory.db"
+}
