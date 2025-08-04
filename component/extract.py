@@ -6,7 +6,7 @@
 """
 import openai
 import json
-with open ("../config.json", "r", encoding="utf-8") as f:
+with open ("./config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
     API_KEY = config["apiKey"]
     EMBEDDING_MODEL = config["embeddingModel"]
