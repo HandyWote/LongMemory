@@ -1,5 +1,6 @@
 """
-将提取到的消息向量化
+Enhanced message vectorization with configuration management
+增强的消息向量化处理，包含配置管理
 """
 import numpy as np
 from typing import List, Dict, Any, Optional
@@ -8,119 +9,117 @@ import openai
 from openai import OpenAI
 import json
 import logging
-from component.extract import extract_entity_relation
+from component.config_manager import setup_system_config
 
-# 配置日志
+# Configure logging / 配置日志
 logger = logging.getLogger(__name__)
 
-# 从配置文件中读取API密钥和模型配置
-with open("./config.json", "r", encoding="utf-8") as f:
-    config = json.load(f)
-    API_KEY = config.get("apiKey")
-    EMBEDDING_MODEL = config.get("embeddingModel", "text-embedding-ada-002")
+# Initialize configuration / 初始化配置
+config_manager = setup_system_config()
 
 class TextEmbedder:
     def __init__(self, api_key: str = None):
         """
+        Initialize text vectorizer
         初始化文本向量化器
         
         Args:
-            api_key: OpenAI API密钥
+            api_key: OpenAI API key / OpenAI API密钥
         """
-        logger.info("初始化TextEmbedder")
-        # 使用OpenAI的embedding模型
-        # 优先使用传入的api_key，否则使用配置文件中的api_key
+        logger.info("Initializing TextEmbedder")
+        # Use OpenAI's embedding model / 使用OpenAI的嵌入模型
+        # Prioritize using the passed api_key, otherwise use the api_key from configuration / 优先使用传入的api_key，否则使用配置中的api_key
         if api_key:
             self.client = OpenAI(api_key=api_key)
-            logger.debug("使用传入的API密钥初始化OpenAI客户端")
-        elif API_KEY:
-            self.client = OpenAI(api_key=API_KEY)
-            logger.debug("使用配置文件中的API密钥初始化OpenAI客户端")
+            logger.debug("Initializing OpenAI client with passed API key")
         else:
-            logger.error("OpenAI API密钥未设置")
-            raise ValueError("OpenAI API密钥未设置。请在config.json中配置apiKey或在初始化时传递api_key参数。")
+            self.client = OpenAI(api_key=config_manager.get_api_key())
+            logger.debug("Initializing OpenAI client with configuration API key")
         
-        self.embedding_model = EMBEDDING_MODEL
-        logger.info(f"使用的嵌入模型: {self.embedding_model}")
+        self.embedding_model = config_manager.get_embedding_model()
+        logger.info(f"Using embedding model: {self.embedding_model}")
     
     def get_embedding(self, text: str) -> List[float]:
         """
+        Get vector representation of a single text
         获取单个文本的向量表示
         
         Args:
-            text: 输入文本
+            text: Input text / 输入文本
             
         Returns:
-            文本的向量表示
+            Vector representation of the text / 文本的向量表示
         """
-        text = text.replace("\n", " ")  # 清理文本
+        text = text.replace("\n", " ")  # Clean text / 清理文本
         response = self.client.embeddings.create(
             input=[text],
             model=self.embedding_model
         )
         embedding = response.data[0].embedding
-        logger.info(f"向量维度: {len(embedding)}")
+        logger.info(f"Vector dimension: {len(embedding)}")
         return embedding
     
     def get_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
+        Get vector representations of multiple texts
         获取多个文本的向量表示
         
         Args:
-            texts: 文本列表
+            texts: Text list / 文本列表
             
         Returns:
-            文本的向量表示列表
+            List of vector representations of texts / 文本的向量表示列表
         """
-        logger.debug(f"为{texts}个文本生成嵌入向量")
+        logger.debug(f"Generating embeddings for {len(texts)} texts")
         if not texts:
             return []
             
-        # 清理文本
+        # Clean texts / 清理文本
         cleaned_texts = [text.replace("\n", " ") for text in texts]
         
-        # 批量获取嵌入
+        # Batch get embeddings / 批量获取嵌入
         response = self.client.embeddings.create(
             input=cleaned_texts,
             model=self.embedding_model
         )
         
-        # 提取嵌入向量
+        # Extract embedding vectors / 提取嵌入向量
         embeddings = [item.embedding for item in response.data]
-        logger.info(f"向量维度: {[len(e) for e in embeddings]}")
+        logger.info(f"Vector dimensions: {[len(e) for e in embeddings]}")
         return embeddings
 
 def process_message_for_database(msg_data: Dict[str, Any]) -> Dict[str, Any]:
     """
+    Process messages obtained from getMessage, generate vectors and format for toDatabase
     处理从getMessage获取的消息，生成向量并格式化为适合toDatabase的格式
     
     Args:
-        msg_data: 包含msg和uuid的消息数据
+        msg_data: Message data containing msg and uuid / 包含msg和uuid的消息数据
         
     Returns:
-        格式化后的数据，包含实体、关系、摘要及其向量表示
+        Formatted data containing entities, relationships, summaries and their vector representations / 格式化后的数据，包含实体、关系、摘要及其向量表示
     """
     from component.extract import extract_entity_relation
     
     msg = msg_data.get('msg', '')
     uuid = msg_data.get('uuid', '')
     
-    # 使用extract模块中的函数提取实体、关系和摘要
+    # Use functions from extract module to extract entities, relationships and summaries / 使用extract模块中的函数提取实体、关系和摘要
     extracted_data = extract_entity_relation(msg)
     
-    # 处理提取错误的情况
+    # Handle extraction errors / 处理提取错误的情况
     if "error" in extracted_data:
-        # 错误处理：创建一个包含错误信息的文本表示
-        error_text = "提取错误"
+        # Error handling: Create a text representation containing error information / 错误处理：创建一个包含错误信息的文本表示
+        error_text = "Extraction error"
         if 'raw_output' in extracted_data:
-            error_text += ", 包含原始输出"
+            error_text += ", contains raw output"
         
-        # 为错误信息创建向量表示
+        # Create vector representation for error information / 为错误信息创建向量表示
         embedder = TextEmbedder()
         error_embedding = embedder.get_embedding(error_text)
-        logger.info(f"向量维度: {len(error_embedding)}")
+        logger.info(f"Vector dimension: {len(error_embedding)}")
         
-        # 准备元数据
+        # Prepare metadata / 准备元数据
         timestamp = datetime.now().isoformat()
         base_metadata = {
             "uuid": uuid,
@@ -141,50 +140,47 @@ def process_message_for_database(msg_data: Dict[str, Any]) -> Dict[str, Any]:
             "summaries_metadata": [base_metadata],
             "uuid": uuid
         }
-        logger.info("错误处理完成")
+        logger.info("Error handling completed")
         return result
     
-    # 提取实体、关系和摘要
+    # Extract entities, relationships and summaries / 提取实体、关系和摘要
     entities_data = extracted_data.get('entities', [])
     relations_data = extracted_data.get('relations', [])
     summary_text = extracted_data.get('summary', '')
     
-    # 提取到实体和关系的数量
-    
-    # 将实体转换为文本列表，过滤掉空实体
+    # Convert entities to text list, filter out empty entities / 将实体转换为文本列表，过滤掉空实体
     entities = []
     for entity in entities_data:
-        if entity.get('name', '').strip():  # 只保留有名称的实体
+        if entity.get('name', '').strip():  # Only keep entities with names / 只保留有名称的实体
             entity_text = f"{entity['name']} ({entity['type']})"
             entities.append(entity_text)
     
-    # 将关系转换为文本列表，过滤掉无效关系
+    # Convert relationships to text list, filter out invalid relationships / 将关系转换为文本列表，过滤掉无效关系
     relations = []
     for relation in relations_data:
         subject = relation.get('subject', '').strip()
         relation_type = relation.get('relation', '').strip()
         object_name = relation.get('object', '').strip()
         
-        # 如果关系中的任何部分为空，尝试从其他部分推断
+        # If any part of the relationship is empty, try to infer from other parts / 如果关系中的任何部分为空，尝试从其他部分推断
         if not subject and object_name and relation_type:
-            # 如果主语为空，但从宾语和关系可以推断，使用宾语作为主语
+            # If subject is empty, but object and relation can be inferred, use object as subject / 如果主语为空，但从宾语和关系可以推断，使用宾语作为主语
             subject = object_name
         elif not object_name and subject and relation_type:
-            # 如果宾语为空，但从主语和关系可以推断，使用主语作为宾语
+            # If object is empty, but subject and relation can be inferred, use subject as object / 如果宾语为空，但从主语和关系可以推断，使用主语作为宾语
             object_name = subject
             
         if subject and relation_type and object_name:
             relation_text = f"{subject} {relation_type} {object_name}"
             relations.append(relation_text)
     
-    # 摘要已经是文本形式
+    # Summary is already in text form / 摘要已经是文本形式
     summaries = [summary_text] if summary_text else []
     
-    # 创建嵌入器实例
-    # 创建嵌入器实例
+    # Create embedder instance / 创建嵌入器实例
     embedder = TextEmbedder()
     
-    # 为实体、关系和摘要生成向量
+    # Generate vectors for entities, relationships and summaries / 为实体、关系和摘要生成向量
     entity_embeddings = []
     relation_embeddings = []
     summary_embeddings = []
@@ -196,7 +192,7 @@ def process_message_for_database(msg_data: Dict[str, Any]) -> Dict[str, Any]:
     if summaries:
         summary_embeddings = embedder.get_embeddings(summaries)
     
-    # 准备元数据
+    # Prepare metadata / 准备元数据
     timestamp = datetime.now().isoformat()
     base_metadata = {
         "uuid": uuid,
@@ -225,15 +221,16 @@ def process_message_for_database(msg_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def format_for_database(processed_data: Dict[str, Any]) -> Dict[str, Any]:
     """
+    Format processed data for database storage
     将处理后的数据格式化为适合数据库存储的格式
     
     Args:
-        processed_data: 处理后的数据
+        processed_data: Processed data / 处理后的数据
         
     Returns:
-        格式化后的数据，可直接传递给toDatabase模块
+        Formatted data that can be directly passed to the toDatabase module / 格式化后的数据，可直接传递给toDatabase模块
     """
-    logger.info("开始格式化处理后的数据以准备数据库存储")
+    logger.info("Starting to format processed data for database storage")
     
     result = {
         "entities": processed_data.get("entities", []),
@@ -245,5 +242,5 @@ def format_for_database(processed_data: Dict[str, Any]) -> Dict[str, Any]:
         "uuid": processed_data.get("uuid", None)
     }
     
-    logger.info("数据格式化完成")
+    logger.info("Data formatting completed")
     return result

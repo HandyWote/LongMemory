@@ -1,4 +1,5 @@
 """
+Main application file, integrating the entire process: receive message -> extract information -> vectorize -> store in database
 主应用文件，整合整个流程：接收消息 -> 提取信息 -> 向量化 -> 存储到数据库
 """
 import flask
@@ -6,6 +7,7 @@ from flask import request, Flask
 import json
 import traceback
 
+# Import error handling and configuration management
 # 导入错误处理和配置管理
 from component.error_handler import (
     setup_system_logging, 
@@ -18,12 +20,14 @@ from component.error_handler import (
 )
 from component.config_manager import setup_system_config
 
+# Set up system logging and configuration
 # 设置系统日志和配置
 setup_system_logging()
 config_manager = setup_system_config()
 error_handler = get_error_handler(__name__)
 input_validator = get_input_validator()
 
+# Import components
 # 导入各个组件
 from component.getMessage import get_message
 from component.extract import extract_entity_relation
@@ -35,6 +39,12 @@ app = Flask(__name__)
 @app.route('/process_message', methods=['POST'])
 def process_message():
     """
+    Complete process for handling user messages:
+    1. Receive message (getMessage)
+    2. Extract entities, relationships and summaries (extract)
+    3. Vectorize processing (toEmbeding)
+    4. Store in database (toDatabase)
+    
     处理用户消息的完整流程:
     1. 接收消息 (getMessage)
     2. 提取实体、关系和摘要 (extract)
@@ -42,15 +52,16 @@ def process_message():
     4. 存储到数据库 (toDatabase)
     """
     try:
-        error_handler.logger.info("开始处理用户消息")
+        error_handler.logger.info("Starting to process user message")
         
+        # 1. Get user message
         # 1. 获取用户消息
         try:
             data = request.get_json()
-            error_handler.logger.info(f"接收到的请求数据: {data}")
+            error_handler.logger.info(f"Received request data: {data}")
         except Exception as json_error:
             validation_error = ValidationError(
-                f"JSON格式错误: {str(json_error)}",
+                f"JSON format error: {str(json_error)}",
                 details={"raw_request": request.get_data(as_text=True)}
             )
             error_response = error_handler.create_error_response(validation_error)
@@ -62,11 +73,12 @@ def process_message():
     
     if not data:
         validation_error = ValidationError(
-            "请求数据不能为空，必须是有效的JSON格式"
+            "Request data cannot be empty, must be valid JSON format"
         )
         error_response = error_handler.create_error_response(validation_error)
         return flask.jsonify(error_response), error_response['status']
     
+    # Use input validator to validate data format
     # 使用输入验证器验证数据格式
     try:
         input_validator.validate_message_format(data)
@@ -78,7 +90,7 @@ def process_message():
     msg = data.get('msg')
     uuid = data.get('uuid')
     
-    error_handler.logger.info(f"提取到的消息内容 - msg: {msg}, uuid: {uuid}")
+    error_handler.logger.info(f"Extracted message content - msg: {msg}, uuid: {uuid}")
     
     msg_data = {
         'msg': msg,
@@ -86,33 +98,37 @@ def process_message():
     }
     
     try:
+        # 2. Process message and generate vector representation
         # 2. 处理消息并生成向量表示
-        error_handler.logger.info("开始处理消息并生成向量表示")
+        error_handler.logger.info("Starting to process message and generate vector representation")
         processed_data = process_message_for_database(msg_data)
-        error_handler.logger.info(f"消息处理完成，处理后的数据: {processed_data}")
+        error_handler.logger.info(f"Message processing completed, processed data: {processed_data}")
         
+        # 3. Format for database storage
         # 3. 格式化为数据库存储格式
-        error_handler.logger.info("开始格式化为数据库存储格式")
+        error_handler.logger.info("Starting to format for database storage")
         formatted_data = format_for_database(processed_data)
-        error_handler.logger.info(f"数据格式化完成，格式化后的数据: {formatted_data}")
+        error_handler.logger.info(f"Data formatting completed, formatted data: {formatted_data}")
         
+        # Check if data is empty
         # 检查数据是否为空
         entities = formatted_data.get("entities", [])
         relations = formatted_data.get("relations", [])
         summaries = formatted_data.get("summaries", [])
         
-        error_handler.logger.info(f"准备存储的数据 - 实体数量: {len(entities)}, 关系数量: {len(relations)}, 摘要数量: {len(summaries)}")
+        error_handler.logger.info(f"Data ready for storage - entity count: {len(entities)}, relation count: {len(relations)}, summary count: {len(summaries)}")
         
         if not entities and not relations and not summaries:
-            error_handler.logger.warning("没有需要存储的数据")
+            error_handler.logger.warning("No data to store")
             return flask.jsonify({
                 'status': 200,
-                'message': '消息处理完成，但未提取到任何实体、关系或摘要',
+                'message': 'Message processing completed, but no entities, relationships or summaries were extracted',
                 'data': {}
             })
         
+        # 4. Store in database
         # 4. 存储到数据库
-        error_handler.logger.info("开始存储到数据库")
+        error_handler.logger.info("Starting to store in database")
         result = store_knowledge_triple(
             entities=formatted_data.get("entities", []),
             relations=formatted_data.get("relations", []),
@@ -122,11 +138,11 @@ def process_message():
             summaries_metadata=formatted_data.get("summaries_metadata"),
             uuid=formatted_data.get("uuid")
         )
-        error_handler.logger.info(f"数据存储完成，存储结果: {result}")
+        error_handler.logger.info(f"Data storage completed, storage result: {result}")
         
         return flask.jsonify({
             'status': 200,
-            'message': '消息处理成功',
+            'message': 'Message processing successful',
             'data': result
         })
         
@@ -148,11 +164,11 @@ def process_message():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """健康检查接口"""
-    error_handler.logger.info("健康检查接口被调用")
+    """Health check interface / 健康检查接口"""
+    error_handler.logger.info("Health check interface called")
     return flask.jsonify({
         'status': 200,
-        'message': '服务运行正常',
+        'message': 'Service is running normally',
         'config': {
             'chat_model': config_manager.get_chat_model(),
             'embedding_model': config_manager.get_embedding_model(),
@@ -161,6 +177,6 @@ def health_check():
     })
 
 if __name__ == '__main__':
-    error_handler.logger.info("应用启动")
-    error_handler.logger.info(f"配置信息 - 聊天模型: {config_manager.get_chat_model()}, 嵌入模型: {config_manager.get_embedding_model()}")
+    error_handler.logger.info("Application started")
+    error_handler.logger.info(f"Configuration information - Chat model: {config_manager.get_chat_model()}, Embedding model: {config_manager.get_embedding_model()}")
     app.run(debug=True, host='0.0.0.0', port=5000)

@@ -1,66 +1,65 @@
 """
-旨在提取用户消息中的实体以及关系
-如：
-用户是xxx。
-用户喜欢xxx
+Enhanced entity and relationship extraction from user messages
+增强的用户消息实体和关系提取
 """
 import openai
 import json
-with open ("./config.json", "r", encoding="utf-8") as f:
-    config = json.load(f)
-    API_KEY = config["apiKey"]
-    EMBEDDING_MODEL = config["embeddingModel"]
-    CHAT_MODEL = config["chatModel"]
+from typing import Dict, List, Any
+from component.config_manager import setup_system_config
 
-# 初始化OpenAI客户端
-client = openai.OpenAI(api_key=API_KEY)
+# Initialize configuration / 初始化配置
+config_manager = setup_system_config()
 
-def extract_entities(message):
+# Initialize OpenAI client / 初始化OpenAI客户端
+client = openai.OpenAI(api_key=config_manager.get_api_key())
+
+def extract_entities(message: str) -> List[Dict[str, str]]:
     """
-    专门提取文本中的实体
+    Extract entities from text
+    从文本中提取实体
     
     Args:
-        message (str): 用户输入的消息
+        message (str): User input message / 用户输入消息
         
     Returns:
-        list: 实体列表，每个实体包含name和type
+        list: Entity list, each entity contains name and type / 实体列表，每个实体包含名称和类型
     """
     sys_prompt = """
-    你是一个专业的实体识别专家，需要从文本中提取所有重要的实体。
+    You are a professional entity recognition expert who needs to extract all important entities from the text.
 
-    请严格按照以下JSON格式输出：
+    Please output strictly in the following JSON format:
     {
         "entities": [
-            {"name": "实体名称", "type": "实体类型"}
+            {"name": "Entity Name", "type": "Entity Type"}
         ]
     }
 
-    实体类型包括：人物、地点、物品、技术、概念、组织、时间等。
+    Entity types include: Person, Location, Object, Technology, Concept, Organization, Time, etc.
     
-    示例：
-    输入："张三喜欢篮球，他在北京工作"
-    输出：{
+    Example:
+    Input: "Zhang San likes basketball, he works in Beijing"
+    Output: {
         "entities": [
-            {"name": "张三", "type": "人物"},
-            {"name": "篮球", "type": "物品"},
-            {"name": "北京", "type": "地点"}
+            {"name": "Zhang San", "type": "Person"},
+            {"name": "basketball", "type": "Object"},
+            {"name": "Beijing", "type": "Location"}
         ]
     }
 
-    注意：
-    1. 只提取明确提到的实体
-    2. 实体名称要完整准确
-    3. 实体类型要恰当分类
-    4. 不要遗漏重要实体
-    5. 只返回JSON格式，不要添加任何其他文字
+    Note:
+    1. Only extract explicitly mentioned entities
+    2. Entity names should be complete and accurate
+    3. Entity types should be appropriately classified
+    4. Do not omit important entities
+    5. Return only JSON format, do not add any other text
     """
     
     try:
         response = client.chat.completions.create(
-            model=CHAT_MODEL,
+            model=config_manager.get_chat_model(),
             messages=[
                 {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": f"请从以下文本中提取实体：{message}"}
+                {"role": "user", "content": f"Please extract entities from the following text: {message}"}
             ],
             temperature=0.3,
             max_tokens=1000
@@ -76,52 +75,53 @@ def extract_entities(message):
     except Exception as e:
         return []
 
-def extract_relations(message, entities):
+def extract_relations(message: str, entities: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """
-    专门提取文本中的关系
+    Extract relationships from text
+    从文本中提取关系
     
     Args:
-        message (str): 用户输入的消息
-        entities (list): 已提取的实体列表
+        message (str): User input message / 用户输入消息
+        entities (list): Extracted entity list / 已提取的实体列表
         
     Returns:
-        list: 关系列表，每个关系包含subject、relation和object
+        list: Relationship list, each relationship contains subject, relation and object / 关系列表，每个关系包含主语、关系和宾语
     """
     sys_prompt = """
-    你是一个专业的关系抽取专家，需要从文本中提取实体之间的关系。
+    You are a professional relationship extraction expert who needs to extract relationships between entities from the text.
 
-    请严格按照以下JSON格式输出：
+    Please output strictly in the following JSON format:
     {
         "relations": [
-            {"subject": "主语实体", "relation": "关系", "object": "宾语实体"}
+            {"subject": "Subject Entity", "relation": "Relation", "object": "Object Entity"}
         ]
     }
 
-    关系类型包括：喜欢、是、位于、使用、拥有、属于、包含、创建、开发、工作等。
+    Relationship types include: likes, is, located in, uses, owns, belongs to, contains, creates, develops, works, etc.
     
-    示例：
-    输入："张三喜欢篮球，他在北京工作"
-    输出：{
+    Example:
+    Input: "Zhang San likes basketball, he works in Beijing"
+    Output: {
         "relations": [
-            {"subject": "张三", "relation": "喜欢", "object": "篮球"},
-            {"subject": "张三", "relation": "位于", "object": "北京"}
+            {"subject": "Zhang San", "relation": "likes", "object": "basketball"},
+            {"subject": "Zhang San", "relation": "located in", "object": "Beijing"}
         ]
     }
 
-    注意：
-    1. 只提取明确存在的关系
-    2. 关系的主语和宾语必须是文本中提到的实体
-    3. 关系类型要准确描述实体间的联系
-    4. 确保关系的逻辑正确
-    5. 只返回JSON格式，不要添加任何其他文字
+    Note:
+    1. Only extract relationships that clearly exist
+    2. The subject and object of the relationship must be entities mentioned in the text
+    3. The relationship type should accurately describe the connection between entities
+    4. Ensure the logic of the relationship is correct
+    5. Return only JSON format, do not add any other text
     """
     
     try:
         response = client.chat.completions.create(
-            model=CHAT_MODEL,
+            model=config_manager.get_chat_model(),
             messages=[
                 {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": f"请从以下文本中提取关系：{message}"}
+                {"role": "user", "content": f"Please extract relationships from the following text: {message}"}
             ],
             temperature=0.3,
             max_tokens=1000
@@ -137,37 +137,38 @@ def extract_relations(message, entities):
     except Exception as e:
         return []
 
-def extract_summary(message):
+def extract_summary(message: str) -> str:
     """
-    专门生成文本的摘要
+    Generate text summary
+    生成文本摘要
     
     Args:
-        message (str): 用户输入的消息
+        message (str): User input message / 用户输入消息
         
     Returns:
-        str: 文本摘要
+        str: Text summary / 文本摘要
     """
     sys_prompt = """
-    你是一个专业的文本摘要专家，需要为文本生成简洁准确的摘要。
+    You are a professional text summarization expert who needs to generate a concise and accurate summary of the text.
 
-    要求：
-    1. 摘要要包含文本的核心信息
-    2. 语言简洁明了，避免冗余
-    3. 保持原文的主要观点和关键信息
-    4. 摘要长度控制在50-200字之间
-    5. 直接返回摘要文本，不要添加任何解释或格式
+    Requirements:
+    1. The summary should contain the core information of the text
+    2. The language should be concise and clear, avoiding redundancy
+    3. Maintain the main points and key information of the original text
+    4. Control the summary length between 50-200 words
+    5. Return the summary text directly, do not add any explanation or format
 
-    示例：
-    输入："张三喜欢篮球，他在北京工作，是一名软件工程师"
-    输出："张三是一名在北京工作的软件工程师，喜欢篮球"
+    Example:
+    Input: "Zhang San likes basketball, he works in Beijing as a software engineer"
+    Output: "Zhang San is a software engineer working in Beijing who likes basketball"
     """
     
     try:
         response = client.chat.completions.create(
-            model=CHAT_MODEL,
+            model=config_manager.get_chat_model(),
             messages=[
                 {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": f"请为以下文本生成摘要：{message}"}
+                {"role": "user", "content": f"Please generate a summary for the following text: {message}"}
             ],
             temperature=0.3,
             max_tokens=500
@@ -178,27 +179,28 @@ def extract_summary(message):
     except Exception as e:
         return ""
 
-def extract_entity_relation(message):
+def extract_entity_relation(message: str) -> Dict[str, Any]:
     """
+    Use three independent API calls to extract entities, relationships and summary respectively
     使用三次独立的API调用分别提取实体、关系和摘要
     
     Args:
-        message (str): 用户输入的消息
+        message (str): User input message / 用户输入消息
         
     Returns:
-        dict: 包含提取的实体和关系的字典
+        dict: Dictionary containing extracted entities and relationships / 包含提取的实体和关系的字典
     """
     try:
-        # 第一步：提取实体
+        # Step 1: Extract entities / 第一步：提取实体
         entities = extract_entities(message)
         
-        # 第二步：提取关系
+        # Step 2: Extract relationships / 第二步：提取关系
         relations = extract_relations(message, entities)
         
-        # 第三步：生成摘要
+        # Step 3: Generate summary / 第三步：生成摘要
         summary = extract_summary(message)
         
-        # 组合结果
+        # Combine results / 组合结果
         result = {
             "entities": entities,
             "relations": relations,
@@ -208,21 +210,7 @@ def extract_entity_relation(message):
         return result
         
     except Exception as e:
-        # 处理整体异常
+        # Handle overall exception / 处理整体异常
         return {
-            "error": f"提取过程中出错: {str(e)}"
+            "error": f"Error during extraction: {str(e)}"
         }
-    
-if __name__ == "__main__":
-    msg = """技术的演进，让全栈的门槛变低了
-曾几何时，前端和后端是两个泾渭分明、需要完全不同技能集的领域。前端写HTML/CSS/JS，后端搞Java/PHP/Python，中间隔着一条API的银河。
-但现在呢？
-
-Node.js的出现，让JavaScript统一了前后端语言。
-Next.js, Nuxt 这类元框架，把路由、数据获取、服务端渲染这些原本属于后端一部分的工作，无缝地集成到了前端的开发流程里。
-tRPC 这类工具，甚至能让前后端共享类型，连写API文档都省了。
-Vercel, Netlify 这类平台，把部署、CDN、Serverless函数这些复杂的运维工作，变成了一键式的傻瓜操作。
-
-技术的发展，正在疯狂地模糊前端和后端的边界。一个熟悉JavaScript的前端，几乎可以无缝地去写服务端的逻辑。
-"""
-    print(extract_entity_relation(msg)['summary'])
